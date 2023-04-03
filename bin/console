@@ -1,0 +1,101 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+require "bundler/setup"
+require "comfpile"
+
+# You can add fixtures and/or initialization code here to make experimenting
+# with your gem easier. You can also use a different console, if you like.
+
+$core = Comfpile::Core.new()
+
+`mkdir /tmp/test`
+`touch /tmp/test/main.cpp`
+
+`mkdir /tmp/test2/`
+`touch /tmp/test2/main.cpp`
+
+$core.add_artefact_engine Comfpile::FilesourceEngine, root_path: "/tmp/test2"
+$core.add_artefact_engine Comfpile::FilesourceEngine, root_path: "/tmp/test"
+
+
+$core.add_artefact_engine do |engine|
+    engine.add_recipe(:parsed, /^(.+)\.(h|c|cpp)$/) do |match, a|
+        
+        a.parent_artefact :sourcefile, a.target
+
+        a.add_step do 
+            puts "Parsing file #{@target}..."
+
+            @linked_artefacts = []
+
+            File.readlines(@required_artefacts[:sourcefile][@target][:file]).each do |l|
+                case l
+                when /^#include\s*[<"](.+)[>"]/
+                    
+                    puts "Got include for file #{$1}!"
+                    @linked_artefacts << craft_artefact(:parsed, $1)
+                 
+                when /\/\/+\s*require\s*[<"]((?:.+)\.(?:c|cpp))[>"]/
+                    puts "Got require for file #{$1}!"
+                    @linked_artefacts << require_artefact(:parsed, $1)
+                end
+            end
+        end
+    end
+
+    engine.add_recipe(:dependency_list, /^(.+)\.(h|c|cpp)$/) do |match, a|
+        a.parent_artefact :parsed, a.target
+
+        a.add_step do 
+            puts "Generating dependency list for #{@target}..."
+
+            parsed_marker = {}
+            parsing_list = [@parent_artefact]
+
+            loop do
+                break if parsing_list.empty?
+                a = parsing_list.pop
+                
+                next if a.nil?
+                next unless a.stage == :parsed
+                next unless a.succeeded?
+
+                next if parsed_marker[a.target]
+                parsed_marker[a.target] = true
+
+                parsing_list += a.linked_artefacts
+            end
+
+            @parameters[:dependency_list] = parsed_marker.keys
+        end
+    end
+
+    engine.add_recipe(:x86_debug, /^run (.+)/) do |match, a|
+
+        a.require_artefact :parsed, "#{match[1]}.cpp"
+    end
+
+    engine.add_recipe(:x86_debug, /(.+)\.o$/) do |match, a|
+        a.require_artefact :sourcefile, "#{match[1]}.cpp"
+
+        a.add_step do
+            
+        end
+
+        true
+    end
+end
+
+$tst = $core.craft_artefact(:dependency_list, "main.cpp");
+
+50.times do
+    $core.execute_step
+end
+
+puts "Dependency list is: #{$tst[:dependency_list]}"
+
+# (If you use this, don't forget to add pry to your Gemfile!)
+require "pry"
+Pry.start
+
