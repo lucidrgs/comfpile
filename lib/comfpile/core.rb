@@ -55,10 +55,16 @@ module Comfpile
             nil
         end
 
+        # @yieldparam [Comfpile::ArtefactEngine] Engine that was newly created
         def add_artefact_engine(engine_class = Comfpile::ArtefactEngine, **options)
-            new_engine = engine_class.new(self,
-                subpriority: @artefact_prio_counter, **options)
-            @artefact_prio_counter += 1
+
+            new_engine = if(engine_class.is_a? Comfpile::ArtefactEngine)
+                engine_class
+            else
+                engine_class.new(self,
+                    subpriority: @artefact_prio_counter, **options)
+                @artefact_prio_counter += 1
+            end
 
             yield(new_engine) if block_given?
 
